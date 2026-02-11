@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
         dbType: dbTypeEnum,
         isActive: true,
         OR: [
-          { title: { contains: question, mode: "insensitive" } },
-          { description: { contains: question, mode: "insensitive" } },
+          { title: { contains: question } },
+          { description: { contains: question } },
           { tags: { hasSome: question.split(/[\s、,]+/).filter(Boolean) } },
         ],
       },
