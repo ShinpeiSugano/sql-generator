@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   } else {
     // adminのフィルタ
     if (email) {
-      where.userEmail = { contains: email, mode: "insensitive" };
+      where.userEmail = { contains: email };
     }
   }
 
@@ -40,8 +40,8 @@ export async function GET(req: NextRequest) {
 
   if (keyword) {
     where.OR = [
-      { userQuestion: { contains: keyword, mode: "insensitive" } },
-      { generatedSql: { contains: keyword, mode: "insensitive" } },
+      { userQuestion: { contains: keyword } },
+      { generatedSql: { contains: keyword } },
     ];
   }
 
