@@ -10,6 +10,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const dynamicParams = true;
 
+export async function generateStaticParams() {
+  return [];
+}
+
 // GET: 監査ログ詳細
 export async function GET(
   req: NextRequest,

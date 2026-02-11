@@ -7,6 +7,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const dynamicParams = true;
 
+export async function generateStaticParams() {
+  return [];
+}
+
 // GET: スキーマドキュメント詳細
 export async function GET(
   req: NextRequest,
