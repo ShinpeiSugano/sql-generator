@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, unauthorizedResponse } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 // GET: 自分の生成履歴（直近）
 export async function GET(req: NextRequest) {
   const session = await requireAuth();

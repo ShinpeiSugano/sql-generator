@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 // GET: 監査ログ詳細
 export async function GET(

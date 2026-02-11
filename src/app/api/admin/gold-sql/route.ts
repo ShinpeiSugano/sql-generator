@@ -9,6 +9,7 @@ import {
 import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 // GET: ゴールドSQL一覧取得
 export async function GET(req: NextRequest) {
   const session = await requireAdmin();

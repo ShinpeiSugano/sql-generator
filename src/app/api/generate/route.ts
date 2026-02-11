@@ -6,6 +6,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { DbType, Role, Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     // 認証チェック
