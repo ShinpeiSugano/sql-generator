@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── NextAuth Models ───
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(member)
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum Role {
+  admin
+  member
+}
+
+// ─── Gold SQL ───
+
+model GoldSql {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  dbType      DbType
+  sql         String   @db.Text
+
+  // MySQLは String[] をサポートしないので Json に変更
+  // 例: ["tag1","tag2"]
+  tags        Json?
+
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([dbType, isActive])
+}
+
+enum DbType {
+  mysql
+  bigquery
+  postgres
+}
+
+// ─── Schema Document (DB定義書) ───
+
+model SchemaDocument {
+  id        String   @id @default(cuid())
+  dbType    DbType
+  version   String
+  content   String   @db.Text
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@unique([dbType, version])
+  @@index([dbType, isActive])
+}
+
+// ─── Audit Log (監査ログ - 追記専用) ───
+
+model AuditLog {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  userId           String
+  userEmail        String
+  role             Role
+  userQuestion     String   @db.Text
+  dbType           DbType
+
+  // MySQLは String[] をサポートしないので Json に変更
+  // 例: ["cuid1","cuid2"]
+  goldSqlIds       Json?
+
+  schemaDocumentId String?
+  schemaVersion    String?
+  promptVersion    String   @default("v1.0")
+  modelMetadata    Json?
+  generatedSql     String?  @db.Text
+  error            String?  @db.Text
+
+  user           User            @relation(fields: [userId], references: [id])
+  schemaDocument SchemaDocument? @relation(fields: [schemaDocumentId], references: [id])
+
+  @@index([userId])
+  @@index([userEmail])
+  @@index([createdAt])
+  @@index([dbType])
+}
