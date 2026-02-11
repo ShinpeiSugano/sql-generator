@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth-helpers";
 import { DbType, Prisma } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
 // GET: 監査ログ一覧
 // admin: 全件（検索/フィルタ対応）
 // member: 自分のログのみ

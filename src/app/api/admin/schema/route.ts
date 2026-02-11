@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
 import { DbType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
 // GET: スキーマドキュメント一覧
 export async function GET(req: NextRequest) {
   const session = await requireAdmin();
