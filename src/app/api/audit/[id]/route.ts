@@ -6,6 +6,8 @@ import {
   forbiddenResponse,
 } from "@/lib/auth-helpers";
 
+export const dynamic = "force-dynamic";
+
 // GET: 監査ログ詳細
 export async function GET(
   req: NextRequest,
