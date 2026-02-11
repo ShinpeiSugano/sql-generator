@@ -5,6 +5,7 @@ import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const dynamicParams = true;
 
 // GET: ゴールドSQL詳細
 export async function GET(
