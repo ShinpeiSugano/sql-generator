@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       title: g.title,
       description: g.description,
       sql: g.sql,
-      tags: g.tags,
+      tags: Array.isArray(g.tags) ? (g.tags as string[]) : [],
     }));
 
     // 3. LLMでSQL生成
