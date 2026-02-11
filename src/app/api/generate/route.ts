@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       where: { dbType: dbTypeEnum, isActive: true },
     });
 
-    // 2. ゴールドSQLを検索（全文検索 + tags + dbType）
+    // 2. ゴールドSQLを検索（全文検索 + dbType）
     const goldSqls = await prisma.goldSql.findMany({
       where: {
         dbType: dbTypeEnum,
@@ -58,7 +58,6 @@ export async function POST(req: NextRequest) {
         OR: [
           { title: { contains: question } },
           { description: { contains: question } },
-          { tags: { hasSome: question.split(/[\s、,]+/).filter(Boolean) } },
         ],
       },
       take: 3,
