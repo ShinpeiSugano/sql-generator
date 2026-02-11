@@ -36,9 +36,9 @@ export async function GET(
 
   // ゴールドSQL情報を取得
   let goldSqls: { id: string; title: string }[] = [];
-  if (log.goldSqlIds && log.goldSqlIds.length > 0) {
+  if (log.goldSqlIds && Array.isArray(log.goldSqlIds) && log.goldSqlIds.length > 0) {
     goldSqls = await prisma.goldSql.findMany({
-      where: { id: { in: log.goldSqlIds } },
+      where: { id: { in: log.goldSqlIds as string[] } },
       select: { id: true, title: true },
     });
   }
