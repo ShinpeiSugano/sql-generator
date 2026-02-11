@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -15,12 +15,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -42,7 +42,8 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
-  role          Role      @default(member)
+  // role: "admin" | "member"
+  role          String    @default("member")
   accounts      Account[]
   sessions      Session[]
   auditLogs     AuditLog[]
@@ -58,23 +59,16 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-enum Role {
-  admin
-  member
-}
-
 // ─── Gold SQL ───
 
 model GoldSql {
   id          String   @id @default(cuid())
   title       String
-  description String?  @db.Text
-  dbType      DbType
-  sql         String   @db.Text
+  description String?
+  dbType      String
+  sql         String
 
-  // MySQLは String[] をサポートしないので Json に変更
-  // 例: ["tag1","tag2"]
-  tags        Json?
+  tags        String?
 
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -83,19 +77,13 @@ model GoldSql {
   @@index([dbType, isActive])
 }
 
-enum DbType {
-  mysql
-  bigquery
-  postgres
-}
-
 // ─── Schema Document (DB定義書) ───
 
 model SchemaDocument {
   id        String   @id @default(cuid())
-  dbType    DbType
+  dbType    String
   version   String
-  content   String   @db.Text
+  content   String
   isActive  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -113,20 +101,18 @@ model AuditLog {
   createdAt        DateTime @default(now())
   userId           String
   userEmail        String
-  role             Role
-  userQuestion     String   @db.Text
-  dbType           DbType
+  role             String
+  userQuestion     String
+  dbType           String
 
-  // MySQLは String[] をサポートしないので Json に変更
-  // 例: ["cuid1","cuid2"]
-  goldSqlIds       Json?
+  goldSqlIds       String?
 
   schemaDocumentId String?
   schemaVersion    String?
   promptVersion    String   @default("v1.0")
-  modelMetadata    Json?
-  generatedSql     String?  @db.Text
-  error            String?  @db.Text
+  modelMetadata    String?
+  generatedSql     String?
+  error            String?
 
   user           User            @relation(fields: [userId], references: [id])
   schemaDocument SchemaDocument? @relation(fields: [schemaDocumentId], references: [id])

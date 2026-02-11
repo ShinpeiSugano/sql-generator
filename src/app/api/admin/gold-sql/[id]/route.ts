@@ -5,11 +5,9 @@ import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const dynamicParams = true;
-
-export async function generateStaticParams() {
-  return [];
-}
+// `generateStaticParams` / `dynamicParams` are page-specific exports
+// and should not be present in an app route. Remove them to avoid
+// Next.js build errors when collecting route data.
 
 // GET: ゴールドSQL詳細
 export async function GET(

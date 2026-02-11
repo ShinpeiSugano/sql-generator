@@ -7,6 +7,12 @@ const ALLOWED_DOMAIN = "xvolve.com";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  pages: {
+    signIn: "/login",
+    error: "/login",
+  },
+  trustHost: true,
+  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -40,9 +46,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return session;
     },
-  },
-  pages: {
-    signIn: "/login",
-    error: "/login",
   },
 });
