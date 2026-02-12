@@ -45,7 +45,7 @@ export async function PUT(
       ...(description !== undefined && { description }),
       ...(dbType !== undefined && { dbType: dbType as DbType }),
       ...(sql !== undefined && { sql }),
-      ...(tags !== undefined && { tags }),
+      ...(tags !== undefined && { tags: Array.isArray(tags) ? JSON.stringify(tags) : tags }),
       ...(isActive !== undefined && { isActive }),
     },
   });

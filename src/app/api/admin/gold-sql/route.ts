@@ -10,6 +10,16 @@ import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+function parseTags(tags: string | null): string[] {
+  if (!tags) return [];
+  try {
+    const parsed = JSON.parse(tags);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return tags.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+}
 // GET: ゴールドSQL一覧取得
 export async function GET(req: NextRequest) {
   const session = await requireAdmin();
@@ -30,7 +40,12 @@ export async function GET(req: NextRequest) {
     orderBy: { updatedAt: "desc" },
   });
 
-  return NextResponse.json(goldSqls);
+  const result = goldSqls.map((gs) => ({
+    ...gs,
+    tags: parseTags(gs.tags),
+  }));
+
+  return NextResponse.json(result);
 }
 
 // POST: ゴールドSQL追加
@@ -63,7 +78,7 @@ export async function POST(req: NextRequest) {
       description: description || null,
       dbType: dbType as DbType,
       sql,
-      tags: tags || [],
+      tags: Array.isArray(tags) ? JSON.stringify(tags) : (tags || null),
       isActive: isActive ?? true,
     },
   });

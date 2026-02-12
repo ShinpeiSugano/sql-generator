@@ -81,7 +81,13 @@ export async function POST(req: NextRequest) {
       title: g.title,
       description: g.description,
       sql: g.sql,
-      tags: Array.isArray(g.tags) ? (g.tags as string[]) : [],
+      tags: (() => {
+        if (Array.isArray(g.tags)) return g.tags as string[];
+        if (typeof g.tags === "string") {
+          try { const p = JSON.parse(g.tags); return Array.isArray(p) ? p : []; } catch { return g.tags.split(",").map((t: string) => t.trim()).filter(Boolean); }
+        }
+        return [];
+      })(),
     }));
 
     // 3. LLMでSQL生成
