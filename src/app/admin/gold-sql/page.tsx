@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/navigation";
 import { MultiSelectTags } from "@/components/multi-select-tags";
 
+interface Tag {
+  id: string;
+  name: string;
+}
+
 interface GoldSql {
   id: string;
   title: string;
@@ -37,6 +42,10 @@ export default function AdminGoldSqlPage() {
   const [filterDbType, setFilterDbType] = useState("");
   const [saving, setSaving] = useState(false);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [editingTagName, setEditingTagName] = useState("");
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -70,8 +79,9 @@ export default function AdminGoldSqlPage() {
     try {
       const res = await fetch("/api/admin/tags");
       if (res.ok) {
-        const data = await res.json();
-        setAvailableTags(data.map((t: { name: string }) => t.name));
+        const data: Tag[] = await res.json();
+        setAllTags(data);
+        setAvailableTags(data.map((t) => t.name));
       }
     } catch {
       // ignore
@@ -85,7 +95,36 @@ export default function AdminGoldSqlPage() {
       body: JSON.stringify({ name }),
     });
     if (res.ok) {
+      const created: Tag = await res.json();
+      setAllTags((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setAvailableTags((prev) => [...prev, name].sort());
+    }
+  };
+
+  const handleDeleteTag = async (id: string) => {
+    if (!confirm("このタグを削除しますか？")) return;
+    const res = await fetch(`/api/admin/tags/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setAllTags((prev) => prev.filter((t) => t.id !== id));
+      setAvailableTags((prev) => {
+        const deleted = allTags.find((t) => t.id === id);
+        return deleted ? prev.filter((n) => n !== deleted.name) : prev;
+      });
+    }
+  };
+
+  const handleRenameTag = async (id: string) => {
+    const name = editingTagName.trim();
+    if (!name) return;
+    const res = await fetch(`/api/admin/tags/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      setEditingTagId(null);
+      setEditingTagName("");
+      fetchTags();
     }
   };
 
@@ -170,16 +209,24 @@ export default function AdminGoldSqlPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">ゴールドSQL管理</h1>
-          <button
-            onClick={() => {
-              setEditingId(null);
-              setForm(EMPTY_FORM);
-              setShowForm(true);
-            }}
-            className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-hover"
-          >
-            新規追加
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowTagManager(true)}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+            >
+              タグ整理
+            </button>
+            <button
+              onClick={() => {
+                setEditingId(null);
+                setForm(EMPTY_FORM);
+                setShowForm(true);
+              }}
+              className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-hover"
+            >
+              新規追加
+            </button>
+          </div>
         </div>
 
         {/* フィルタ */}
@@ -386,6 +433,87 @@ export default function AdminGoldSqlPage() {
                   {saving ? "保存中..." : "保存"}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        {/* タグ整理モーダル */}
+        {showTagManager && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[70vh] overflow-hidden p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">タグ整理</h2>
+                <button
+                  onClick={() => {
+                    setShowTagManager(false);
+                    setEditingTagId(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-xl"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {allTags.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4">タグがまだありません</p>
+              ) : (
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                  {allTags.map((tag) => (
+                    <div
+                      key={tag.id}
+                      className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg"
+                    >
+                      {editingTagId === tag.id ? (
+                        <>
+                          <input
+                            type="text"
+                            value={editingTagName}
+                            onChange={(e) => setEditingTagName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleRenameTag(tag.id);
+                              if (e.key === "Escape") setEditingTagId(null);
+                            }}
+                            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleRenameTag(tag.id)}
+                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                          >
+                            保存
+                          </button>
+                          <button
+                            onClick={() => setEditingTagId(null)}
+                            className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                          >
+                            取消
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-sm text-gray-700">
+                            {tag.name}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingTagId(tag.id);
+                              setEditingTagName(tag.name);
+                            }}
+                            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
+                          >
+                            編集
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTag(tag.id)}
+                            className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+                          >
+                            削除
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
