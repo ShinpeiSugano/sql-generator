@@ -3,8 +3,17 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───
+
+enum DbType {
+  mysql
+  bigquery
+  postgres
 }
 
 // ─── NextAuth Models ───
@@ -65,7 +74,7 @@ model GoldSql {
   id          String   @id @default(cuid())
   title       String
   description String?
-  dbType      String
+  dbType      DbType
   sql         String
 
   tags        String?

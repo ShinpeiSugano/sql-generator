@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
-import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,7 +45,7 @@ export async function PUT(
     if (current) {
       await prisma.schemaDocument.updateMany({
         where: {
-          dbType: dbType ? (dbType as DbType) : current.dbType,
+          dbType: dbType ? dbType : current.dbType,
           isActive: true,
           NOT: { id },
         },
@@ -58,7 +57,7 @@ export async function PUT(
   const schema = await prisma.schemaDocument.update({
     where: { id },
     data: {
-      ...(dbType !== undefined && { dbType: dbType as DbType }),
+      ...(dbType !== undefined && { dbType }),
       ...(version !== undefined && { version }),
       ...(content !== undefined && { content }),
       ...(isActive !== undefined && { isActive }),

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, unauthorizedResponse } from "@/lib/auth-helpers";
 import { generateSql, GoldSqlExample } from "@/lib/llm";
 import { rateLimit } from "@/lib/rate-limit";
-import { DbType, Role, Prisma } from "@prisma/client";
+import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     // 1. アクティブなスキーマドキュメントを取得
     const schemaDoc = await prisma.schemaDocument.findFirst({
-      where: { dbType: dbTypeEnum, isActive: true },
+      where: { dbType, isActive: true },
     });
 
     // 2. ゴールドSQLを検索（全文検索 + dbType）
@@ -104,16 +104,16 @@ export async function POST(req: NextRequest) {
       data: {
         userId: session.user.id,
         userEmail: session.user.email || "",
-        role: session.user.role as Role,
+        role: session.user.role || "member",
         userQuestion: question,
-        dbType: dbTypeEnum,
-        goldSqlIds: finalGoldSqls.map((g) => g.id),
+        dbType,
+        goldSqlIds: JSON.stringify(finalGoldSqls.map((g) => g.id)),
         schemaDocumentId: schemaDoc?.id || null,
         schemaVersion: schemaDoc?.version || null,
         promptVersion: result?.promptVersion || "v1.0",
         modelMetadata: result
-          ? { model: result.model, temperature: result.temperature }
-          : Prisma.JsonNull,
+          ? JSON.stringify({ model: result.model, temperature: result.temperature })
+          : null,
         generatedSql: result?.sql || null,
         error: errorMessage,
       },

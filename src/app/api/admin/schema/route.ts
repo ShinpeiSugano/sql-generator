@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
-import { DbType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,7 +10,7 @@ export async function GET(req: NextRequest) {
   if (!session) return forbiddenResponse();
 
   const { searchParams } = new URL(req.url);
-  const dbType = searchParams.get("dbType") as DbType | null;
+  const dbType = searchParams.get("dbType");
 
   const where: Record<string, unknown> = {};
   if (dbType && ["mysql", "bigquery", "postgres"].includes(dbType)) {
@@ -51,14 +50,14 @@ export async function POST(req: NextRequest) {
   // isActive=true にする場合、同じdbTypeの他のスキーマを非アクティブに
   if (isActive) {
     await prisma.schemaDocument.updateMany({
-      where: { dbType: dbType as DbType, isActive: true },
+      where: { dbType, isActive: true },
       data: { isActive: false },
     });
   }
 
   const schema = await prisma.schemaDocument.create({
     data: {
-      dbType: dbType as DbType,
+      dbType,
       version,
       content,
       isActive: isActive ?? false,
