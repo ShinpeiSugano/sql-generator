@@ -20,6 +20,7 @@ export function Navigation() {
           { href: "/admin/audit", label: "監査ログ" },
           { href: "/admin/gold-sql", label: "ゴールドSQL" },
           { href: "/admin/schema", label: "DB定義書" },
+          { href: "/admin/feedback", label: "フィードバック" },
         ]
       : []),
   ];

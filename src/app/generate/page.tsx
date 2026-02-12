@@ -16,6 +16,7 @@ interface HistoryItem {
 
 interface GenerateResult {
   sql: string;
+  auditLogId: string;
   goldSqlsUsed: { id: string; title: string }[];
   schemaVersion: string | null;
 }
@@ -30,6 +31,12 @@ export default function GeneratePage() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [copied, setCopied] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState<"good" | "bad" | null>(null);
+  const [correctedSql, setCorrectedSql] = useState("");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackDone, setFeedbackDone] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -76,6 +83,12 @@ export default function GeneratePage() {
       } else {
         setResult(data);
         fetchHistory();
+        // フィードバックダイアログをリセットして開く
+        setFeedbackRating(null);
+        setCorrectedSql("");
+        setFeedbackComment("");
+        setFeedbackDone(false);
+        setFeedbackOpen(true);
       }
     } catch {
       setError("通信エラーが発生しました");
@@ -89,6 +102,35 @@ export default function GeneratePage() {
       await navigator.clipboard.writeText(result.sql);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackRating || !result?.auditLogId) return;
+    if (feedbackRating === "bad" && !correctedSql.trim()) return;
+
+    setFeedbackSubmitting(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          auditLogId: result.auditLogId,
+          rating: feedbackRating,
+          correctedSql: feedbackRating === "bad" ? correctedSql : null,
+          comment: feedbackComment || null,
+        }),
+      });
+      if (res.ok) {
+        setFeedbackDone(true);
+        setTimeout(() => {
+          setFeedbackOpen(false);
+        }, 1500);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFeedbackSubmitting(false);
     }
   };
 
@@ -243,6 +285,125 @@ export default function GeneratePage() {
                     スキーマバージョン: {result.schemaVersion}
                   </p>
                 )}
+
+                {/* フィードバック済み表示 or 再評価ボタン */}
+                {!feedbackOpen && feedbackDone && (
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
+                    <span className="text-sm text-green-600">フィードバック送信済み</span>
+                    <button
+                      onClick={() => {
+                        setFeedbackDone(false);
+                        setFeedbackOpen(true);
+                      }}
+                      className="text-xs text-gray-400 hover:text-gray-600 underline"
+                    >
+                      再評価
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* フィードバックダイアログ */}
+            {feedbackOpen && result && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                {feedbackDone ? (
+                  <div className="text-center py-4">
+                    <p className="text-lg font-medium text-green-600">
+                      フィードバックを送信しました
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      生成SQLの評価
+                    </h3>
+
+                    {/* Good / Bad 選択 */}
+                    <div className="flex gap-3 mb-4">
+                      <button
+                        onClick={() => setFeedbackRating("good")}
+                        className={`flex-1 py-3 px-4 rounded-lg border-2 text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                          feedbackRating === "good"
+                            ? "border-green-500 bg-green-50 text-green-700"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="text-lg">&#128077;</span>
+                        Good
+                      </button>
+                      <button
+                        onClick={() => setFeedbackRating("bad")}
+                        className={`flex-1 py-3 px-4 rounded-lg border-2 text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                          feedbackRating === "bad"
+                            ? "border-red-500 bg-red-50 text-red-700"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="text-lg">&#128078;</span>
+                        Bad
+                      </button>
+                    </div>
+
+                    {/* Badの場合: 正しいSQL入力（必須） */}
+                    {feedbackRating === "bad" && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          正しいSQL（必須）
+                        </label>
+                        <textarea
+                          value={correctedSql}
+                          onChange={(e) => setCorrectedSql(e.target.value)}
+                          placeholder="正しいSQLを入力してください..."
+                          rows={6}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary resize-none text-gray-900 placeholder-gray-400 font-mono text-sm"
+                        />
+                        {!correctedSql.trim() && (
+                          <p className="mt-1 text-xs text-red-500">
+                            Badの場合は正しいSQLの入力が必須です
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* コメント（任意） */}
+                    {feedbackRating && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          コメント（任意）
+                        </label>
+                        <textarea
+                          value={feedbackComment}
+                          onChange={(e) => setFeedbackComment(e.target.value)}
+                          placeholder="補足があれば..."
+                          rows={2}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary resize-none text-gray-900 placeholder-gray-400 text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {/* 送信ボタン */}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleFeedbackSubmit}
+                        disabled={
+                          !feedbackRating ||
+                          (feedbackRating === "bad" && !correctedSql.trim()) ||
+                          feedbackSubmitting
+                        }
+                        className="flex-1 py-2 px-4 bg-primary text-white rounded-lg font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                      >
+                        {feedbackSubmitting ? "送信中..." : "フィードバックを送信"}
+                      </button>
+                      <button
+                        onClick={() => setFeedbackOpen(false)}
+                        className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        スキップ
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -264,9 +425,12 @@ export default function GeneratePage() {
                       onClick={() => {
                         setQuestion(item.userQuestion);
                         setDbType(item.dbType);
+                        setFeedbackOpen(false);
+                        setFeedbackDone(false);
                         if (item.generatedSql) {
                           setResult({
                             sql: item.generatedSql,
+                            auditLogId: item.id,
                             goldSqlsUsed: [],
                             schemaVersion: null,
                           });

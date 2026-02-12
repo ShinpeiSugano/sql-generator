@@ -56,6 +56,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   auditLogs     AuditLog[]
+  feedbacks     Feedback[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -138,4 +139,27 @@ model AuditLog {
   @@index([userEmail])
   @@index([createdAt])
   @@index([dbType])
+  feedbacks  Feedback[]
+}
+
+// ─── Feedback (SQL生成フィードバック) ───
+
+model Feedback {
+  id            String   @id @default(cuid())
+  auditLogId    String
+  userId        String
+  userEmail     String
+  rating        String   // "good" | "bad"
+  correctedSql  String?  // badの場合に正しいSQL
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  auditLog AuditLog @relation(fields: [auditLogId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([auditLogId])
+  @@index([userId])
+  @@index([rating])
+  @@index([createdAt])
 }
