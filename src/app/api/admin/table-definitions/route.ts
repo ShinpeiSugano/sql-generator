@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
+import { requireAuth, requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// GET: テーブル定義一覧
+// GET: テーブル定義一覧（認証済みユーザーなら誰でも閲覧可）
 export async function GET(req: NextRequest) {
-  const session = await requireAdmin();
+  const session = await requireAuth();
   if (!session) return forbiddenResponse();
 
   const { searchParams } = new URL(req.url);

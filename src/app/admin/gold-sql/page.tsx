@@ -438,8 +438,17 @@ export default function AdminGoldSqlPage() {
         )}
         {/* タグ整理モーダル */}
         {showTagManager && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-lg w-full max-h-[70vh] overflow-hidden p-6">
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              setShowTagManager(false);
+              setEditingTagId(null);
+            }}
+          >
+            <div
+              className="bg-white rounded-xl max-w-lg w-full max-h-[70vh] overflow-hidden p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">タグ整理</h2>
                 <button

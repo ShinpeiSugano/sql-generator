@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
+import { requireAuth, requireAdmin, forbiddenResponse } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// GET: テーブル定義詳細（カラム含む）
+// GET: テーブル定義詳細（カラム含む・認証済みユーザーなら閲覧可）
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await requireAdmin();
+  const session = await requireAuth();
   if (!session) return forbiddenResponse();
 
   const { id } = await params;

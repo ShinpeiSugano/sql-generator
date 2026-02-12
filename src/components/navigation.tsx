@@ -15,11 +15,11 @@ export function Navigation() {
   const links = [
     { href: "/generate", label: "SQL生成" },
     { href: "/history", label: "履歴" },
+    { href: "/admin/schema", label: "DB定義書" },
     ...(isAdmin
       ? [
           { href: "/admin/audit", label: "監査ログ" },
           { href: "/admin/gold-sql", label: "ゴールドSQL" },
-          { href: "/admin/schema", label: "DB定義書" },
           { href: "/admin/feedback", label: "フィードバック" },
         ]
       : []),
