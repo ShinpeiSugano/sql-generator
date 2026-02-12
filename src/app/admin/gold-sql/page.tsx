@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/navigation";
+import { MultiSelectTags } from "@/components/multi-select-tags";
 
 interface GoldSql {
   id: string;
@@ -22,7 +23,7 @@ const EMPTY_FORM = {
   description: "",
   dbType: "mysql",
   sql: "",
-  tags: "",
+  tags: [] as string[],
   isActive: true,
 };
 
@@ -35,6 +36,7 @@ export default function AdminGoldSqlPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [filterDbType, setFilterDbType] = useState("");
   const [saving, setSaving] = useState(false);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -47,6 +49,7 @@ export default function AdminGoldSqlPage() {
   useEffect(() => {
     if (session && session.user.role === "admin") {
       fetchGoldSqls();
+      fetchTags();
     }
   }, [session, filterDbType]);
 
@@ -63,16 +66,33 @@ export default function AdminGoldSqlPage() {
     }
   };
 
+  const fetchTags = async () => {
+    try {
+      const res = await fetch("/api/admin/tags");
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTags(data.map((t: { name: string }) => t.name));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCreateTag = async (name: string) => {
+    const res = await fetch("/api/admin/tags", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      setAvailableTags((prev) => [...prev, name].sort());
+    }
+  };
+
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      const body = {
-        ...form,
-        tags: form.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
-      };
+      const body = { ...form };
 
       const url = editingId
         ? `/api/admin/gold-sql/${editingId}`
@@ -105,7 +125,7 @@ export default function AdminGoldSqlPage() {
       description: gs.description || "",
       dbType: gs.dbType,
       sql: gs.sql,
-      tags: gs.tags.join(", "),
+      tags: gs.tags || [],
       isActive: gs.isActive,
     });
     setShowForm(true);
@@ -324,14 +344,14 @@ export default function AdminGoldSqlPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    タグ（カンマ区切り）
+                    タグ
                   </label>
-                  <input
-                    type="text"
-                    value={form.tags}
-                    onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                    placeholder="LTV, 年齢, 登録年"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  <MultiSelectTags
+                    availableTags={availableTags}
+                    selectedTags={form.tags}
+                    onChange={(tags) => setForm({ ...form, tags })}
+                    onCreateTag={handleCreateTag}
+                    placeholder="タグを選択..."
                   />
                 </div>
 
