@@ -150,8 +150,8 @@ export default function AdminSchemaPage() {
       } else {
         setUploadResult(`エラー: ${data.error}`);
       }
-    } catch {
-      setUploadResult("アップロードに失敗しました");
+    } catch (err) {
+      setUploadResult(`アップロードに失敗しました: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploading(false);
       e.target.value = "";

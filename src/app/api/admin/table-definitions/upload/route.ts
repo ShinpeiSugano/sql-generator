@@ -136,98 +136,104 @@ function parseSheet(sheet: XLSX.WorkSheet, sheetName: string): ParsedTable | nul
 
 // POST: xlsxアップロードで一括取り込み
 export async function POST(req: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return forbiddenResponse();
+  try {
+    const session = await requireAdmin();
+    if (!session) return forbiddenResponse();
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  const dbType = formData.get("dbType") as string | null;
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
+    const dbType = formData.get("dbType") as string | null;
 
-  if (!file || !dbType) {
-    return NextResponse.json(
-      { error: "file と dbType は必須です" },
-      { status: 400 }
-    );
-  }
-
-  if (!["mysql", "bigquery", "postgres"].includes(dbType)) {
-    return NextResponse.json(
-      { error: "無効なDB種別です" },
-      { status: 400 }
-    );
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-
-  const parsedTables: ParsedTable[] = [];
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    const parsed = parseSheet(sheet, sheetName);
-    if (parsed) {
-      parsedTables.push(parsed);
+    if (!file || !dbType) {
+      return NextResponse.json(
+        { error: "file と dbType は必須です" },
+        { status: 400 }
+      );
     }
-  }
 
-  if (parsedTables.length === 0) {
-    return NextResponse.json(
-      { error: "有効なテーブル定義が見つかりませんでした" },
-      { status: 400 }
-    );
-  }
+    if (!["mysql", "bigquery", "postgres"].includes(dbType)) {
+      return NextResponse.json(
+        { error: "無効なDB種別です" },
+        { status: 400 }
+      );
+    }
 
-  // トランザクションで一括処理（既存データは上書き）
-  const results = await prisma.$transaction(async (tx) => {
-    const created: string[] = [];
-    const updated: string[] = [];
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const workbook = XLSX.read(buffer, { type: "buffer" });
 
-    for (let i = 0; i < parsedTables.length; i++) {
-      const t = parsedTables[i];
-      const existing = await tx.tableDefinition.findUnique({
-        where: { dbType_tableName: { dbType, tableName: t.tableName } },
-      });
-
-      if (existing) {
-        // 既存テーブル: カラム全削除→再作成
-        await tx.columnDefinition.deleteMany({ where: { tableId: existing.id } });
-        await tx.tableDefinition.update({
-          where: { id: existing.id },
-          data: {
-            tableNameJa: t.tableNameJa,
-            description: t.description,
-            sortOrder: i + 1,
-            columns: {
-              create: t.columns,
-            },
-          },
-        });
-        updated.push(t.tableName);
-      } else {
-        // 新規テーブル
-        await tx.tableDefinition.create({
-          data: {
-            dbType,
-            tableName: t.tableName,
-            tableNameJa: t.tableNameJa,
-            description: t.description,
-            sortOrder: i + 1,
-            isActive: true,
-            columns: {
-              create: t.columns,
-            },
-          },
-        });
-        created.push(t.tableName);
+    const parsedTables: ParsedTable[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const parsed = parseSheet(sheet, sheetName);
+      if (parsed) {
+        parsedTables.push(parsed);
       }
     }
 
-    return { created, updated };
-  });
+    if (parsedTables.length === 0) {
+      return NextResponse.json(
+        { error: `有効なテーブル定義が見つかりませんでした（シート数: ${workbook.SheetNames.length}, シート名: ${workbook.SheetNames.slice(0, 5).join(", ")}）` },
+        { status: 400 }
+      );
+    }
 
-  return NextResponse.json({
-    message: `${results.created.length}件作成、${results.updated.length}件更新しました`,
-    created: results.created,
-    updated: results.updated,
-    totalTables: parsedTables.length,
-  });
+    // トランザクションで一括処理（既存データは上書き）
+    const results = await prisma.$transaction(async (tx) => {
+      const created: string[] = [];
+      const updated: string[] = [];
+
+      for (let i = 0; i < parsedTables.length; i++) {
+        const t = parsedTables[i];
+        const existing = await tx.tableDefinition.findUnique({
+          where: { dbType_tableName: { dbType, tableName: t.tableName } },
+        });
+
+        if (existing) {
+          await tx.columnDefinition.deleteMany({ where: { tableId: existing.id } });
+          await tx.tableDefinition.update({
+            where: { id: existing.id },
+            data: {
+              tableNameJa: t.tableNameJa,
+              description: t.description,
+              sortOrder: i + 1,
+              columns: {
+                create: t.columns,
+              },
+            },
+          });
+          updated.push(t.tableName);
+        } else {
+          await tx.tableDefinition.create({
+            data: {
+              dbType,
+              tableName: t.tableName,
+              tableNameJa: t.tableNameJa,
+              description: t.description,
+              sortOrder: i + 1,
+              isActive: true,
+              columns: {
+                create: t.columns,
+              },
+            },
+          });
+          created.push(t.tableName);
+        }
+      }
+
+      return { created, updated };
+    });
+
+    return NextResponse.json({
+      message: `${results.created.length}件作成、${results.updated.length}件更新しました`,
+      created: results.created,
+      updated: results.updated,
+      totalTables: parsedTables.length,
+    });
+  } catch (err) {
+    console.error("xlsx upload error:", err);
+    return NextResponse.json(
+      { error: `アップロード処理エラー: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 }
+    );
+  }
 }
