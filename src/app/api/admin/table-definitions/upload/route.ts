@@ -177,51 +177,49 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // トランザクションで一括処理（既存データは上書き）
-    const results = await prisma.$transaction(async (tx) => {
-      const created: string[] = [];
-      const updated: string[] = [];
+    // 一括処理（PgBouncer互換: interactive transactionを使わない）
+    const created: string[] = [];
+    const updated: string[] = [];
 
-      for (let i = 0; i < parsedTables.length; i++) {
-        const t = parsedTables[i];
-        const existing = await tx.tableDefinition.findUnique({
-          where: { dbType_tableName: { dbType, tableName: t.tableName } },
+    for (let i = 0; i < parsedTables.length; i++) {
+      const t = parsedTables[i];
+      const existing = await prisma.tableDefinition.findUnique({
+        where: { dbType_tableName: { dbType, tableName: t.tableName } },
+      });
+
+      if (existing) {
+        await prisma.columnDefinition.deleteMany({ where: { tableId: existing.id } });
+        await prisma.tableDefinition.update({
+          where: { id: existing.id },
+          data: {
+            tableNameJa: t.tableNameJa,
+            description: t.description,
+            sortOrder: i + 1,
+            columns: {
+              create: t.columns,
+            },
+          },
         });
-
-        if (existing) {
-          await tx.columnDefinition.deleteMany({ where: { tableId: existing.id } });
-          await tx.tableDefinition.update({
-            where: { id: existing.id },
-            data: {
-              tableNameJa: t.tableNameJa,
-              description: t.description,
-              sortOrder: i + 1,
-              columns: {
-                create: t.columns,
-              },
+        updated.push(t.tableName);
+      } else {
+        await prisma.tableDefinition.create({
+          data: {
+            dbType,
+            tableName: t.tableName,
+            tableNameJa: t.tableNameJa,
+            description: t.description,
+            sortOrder: i + 1,
+            isActive: true,
+            columns: {
+              create: t.columns,
             },
-          });
-          updated.push(t.tableName);
-        } else {
-          await tx.tableDefinition.create({
-            data: {
-              dbType,
-              tableName: t.tableName,
-              tableNameJa: t.tableNameJa,
-              description: t.description,
-              sortOrder: i + 1,
-              isActive: true,
-              columns: {
-                create: t.columns,
-              },
-            },
-          });
-          created.push(t.tableName);
-        }
+          },
+        });
+        created.push(t.tableName);
       }
+    }
 
-      return { created, updated };
-    });
+    const results = { created, updated };
 
     return NextResponse.json({
       message: `${results.created.length}件作成、${results.updated.length}件更新しました`,
