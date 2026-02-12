@@ -47,10 +47,45 @@ export async function POST(req: NextRequest) {
 
     const dbTypeEnum = dbType as DbType;
 
-    // 1. アクティブなスキーマドキュメントを取得
-    const schemaDoc = await prisma.schemaDocument.findFirst({
+    // 1. 構造化テーブル定義からスキーマテキストを自動生成
+    const tableDefs = await prisma.tableDefinition.findMany({
       where: { dbType, isActive: true },
+      include: { columns: { orderBy: { sortOrder: "asc" } } },
+      orderBy: { sortOrder: "asc" },
     });
+
+    let schemaText = "";
+    if (tableDefs.length > 0) {
+      schemaText = tableDefs
+        .map((t) => {
+          const header = `■ テーブル: ${t.tableName}${t.tableNameJa ? `（${t.tableNameJa}）` : ""}${t.description ? `\n  概要: ${t.description}` : ""}`;
+          const cols = t.columns
+            .map((c) => {
+              const parts = [`    - ${c.columnName}`];
+              if (c.columnNameJa) parts.push(`（${c.columnNameJa}）`);
+              parts.push(`: ${c.dataType}`);
+              if (c.keyType) parts.push(` [${c.keyType}]`);
+              if (!c.nullable) parts.push(` NOT NULL`);
+              if (c.defaultValue) parts.push(` DEFAULT ${c.defaultValue}`);
+              if (c.description) parts.push(` -- ${c.description}`);
+              return parts.join("");
+            })
+            .join("\n");
+          return `${header}\n${cols}`;
+        })
+        .join("\n\n");
+    }
+
+    // フォールバック: 構造化データがなければ旧SchemaDocumentを使用
+    const schemaDoc = schemaText
+      ? null
+      : await prisma.schemaDocument.findFirst({
+          where: { dbType, isActive: true },
+        });
+
+    if (schemaDoc) {
+      schemaText = schemaDoc.content;
+    }
 
     // 2. ゴールドSQLを検索（全文検索 + dbType）
     const goldSqls = await prisma.goldSql.findMany({
@@ -98,7 +133,7 @@ export async function POST(req: NextRequest) {
       result = await generateSql({
         userQuestion: question,
         dbType,
-        schemaText: schemaDoc?.content || "",
+        schemaText: schemaText || "",
         goldSqlExamples,
       });
     } catch (err) {
