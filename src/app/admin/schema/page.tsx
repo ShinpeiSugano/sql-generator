@@ -1,37 +1,71 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/navigation";
 
-interface SchemaDoc {
+interface ColumnDef {
   id: string;
-  dbType: string;
-  version: string;
-  content: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  sortOrder: number;
+  columnName: string;
+  columnNameJa: string | null;
+  dataType: string;
+  keyType: string | null;
+  nullable: boolean;
+  defaultValue: string | null;
+  constants: string | null;
+  description: string | null;
 }
 
-const EMPTY_FORM = {
-  dbType: "mysql",
-  version: "",
-  content: "",
-  isActive: false,
-};
+interface TableDef {
+  id: string;
+  dbType: string;
+  tableName: string;
+  tableNameJa: string | null;
+  description: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  columns?: ColumnDef[];
+}
 
 export default function AdminSchemaPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [schemas, setSchemas] = useState<SchemaDoc[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [filterDbType, setFilterDbType] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [tables, setTables] = useState<TableDef[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterDbType, setFilterDbType] = useState("mysql");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedTable, setExpandedTable] = useState<TableDef | null>(null);
+
+  // アップロード
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<string | null>(null);
+
+  // テーブル編集
+  const [editingTableId, setEditingTableId] = useState<string | null>(null);
+  const [editTableForm, setEditTableForm] = useState({
+    tableName: "",
+    tableNameJa: "",
+    description: "",
+  });
+
+  // カラム編集
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
+  const [editColumnForm, setEditColumnForm] = useState<Partial<ColumnDef>>({});
+
+  // 新規カラム追加
+  const [addingColumn, setAddingColumn] = useState(false);
+  const [newColumnForm, setNewColumnForm] = useState({
+    columnName: "",
+    columnNameJa: "",
+    dataType: "",
+    keyType: "",
+    nullable: true,
+    defaultValue: "",
+    constants: "",
+    description: "",
+  });
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -41,81 +75,207 @@ export default function AdminSchemaPage() {
     }
   }, [status, session, router]);
 
-  useEffect(() => {
-    if (session && session.user.role === "admin") {
-      fetchSchemas();
-    }
-  }, [session, filterDbType]);
-
-  const fetchSchemas = async () => {
-    const params = filterDbType ? `?dbType=${filterDbType}` : "";
+  const fetchTables = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch(`/api/admin/schema${params}`);
+      const res = await fetch(
+        `/api/admin/table-definitions?dbType=${filterDbType}`
+      );
       if (res.ok) {
         const data = await res.json();
-        setSchemas(data);
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleSubmit = async () => {
-    setSaving(true);
-    try {
-      const url = editingId
-        ? `/api/admin/schema/${editingId}`
-        : "/api/admin/schema";
-      const method = editingId ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      if (res.ok) {
-        setShowForm(false);
-        setEditingId(null);
-        setForm(EMPTY_FORM);
-        fetchSchemas();
+        setTables(data);
       }
     } catch {
       // ignore
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  };
+  }, [filterDbType]);
 
-  const handleEdit = (schema: SchemaDoc) => {
-    setEditingId(schema.id);
-    setForm({
-      dbType: schema.dbType,
-      version: schema.version,
-      content: schema.content,
-      isActive: schema.isActive,
-    });
-    setShowForm(true);
-  };
+  useEffect(() => {
+    if (session && session.user.role === "admin") {
+      fetchTables();
+    }
+  }, [session, fetchTables]);
 
-  const handleActivate = async (schema: SchemaDoc) => {
+  const fetchTableDetail = async (id: string) => {
     try {
-      await fetch(`/api/admin/schema/${schema.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: true }),
-      });
-      fetchSchemas();
+      const res = await fetch(`/api/admin/table-definitions/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExpandedTable(data);
+      }
     } catch {
       // ignore
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("本当に削除しますか？")) return;
+  const handleToggleExpand = (id: string) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      setExpandedTable(null);
+      setEditingColumnId(null);
+      setAddingColumn(false);
+    } else {
+      setExpandedId(id);
+      setEditingColumnId(null);
+      setAddingColumn(false);
+      fetchTableDetail(id);
+    }
+  };
+
+  // --- アップロード ---
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadResult(null);
     try {
-      await fetch(`/api/admin/schema/${id}`, { method: "DELETE" });
-      fetchSchemas();
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("dbType", filterDbType);
+
+      const res = await fetch("/api/admin/table-definitions/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setUploadResult(
+          `${data.totalTables}テーブル取り込み完了（新規: ${data.created.length}, 更新: ${data.updated.length}）`
+        );
+        fetchTables();
+      } else {
+        setUploadResult(`エラー: ${data.error}`);
+      }
+    } catch {
+      setUploadResult("アップロードに失敗しました");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  // --- テーブル編集 ---
+  const handleEditTable = (t: TableDef) => {
+    setEditingTableId(t.id);
+    setEditTableForm({
+      tableName: t.tableName,
+      tableNameJa: t.tableNameJa || "",
+      description: t.description || "",
+    });
+  };
+
+  const handleSaveTable = async () => {
+    if (!editingTableId) return;
+    try {
+      const res = await fetch(
+        `/api/admin/table-definitions/${editingTableId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editTableForm),
+        }
+      );
+      if (res.ok) {
+        setEditingTableId(null);
+        fetchTables();
+        if (expandedId === editingTableId) {
+          fetchTableDetail(editingTableId);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDeleteTable = async (id: string) => {
+    if (!confirm("このテーブル定義を削除しますか？")) return;
+    try {
+      const res = await fetch(`/api/admin/table-definitions/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        if (expandedId === id) {
+          setExpandedId(null);
+          setExpandedTable(null);
+        }
+        fetchTables();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // --- カラム編集 ---
+  const handleEditColumn = (col: ColumnDef) => {
+    setEditingColumnId(col.id);
+    setEditColumnForm({ ...col });
+  };
+
+  const handleSaveColumn = async () => {
+    if (!editingColumnId || !expandedId) return;
+    try {
+      const res = await fetch(
+        `/api/admin/table-definitions/${expandedId}/columns/${editingColumnId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editColumnForm),
+        }
+      );
+      if (res.ok) {
+        setEditingColumnId(null);
+        fetchTableDetail(expandedId);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDeleteColumn = async (columnId: string) => {
+    if (!expandedId || !confirm("このカラムを削除しますか？")) return;
+    try {
+      const res = await fetch(
+        `/api/admin/table-definitions/${expandedId}/columns/${columnId}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        fetchTableDetail(expandedId);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleAddColumn = async () => {
+    if (!expandedId || !newColumnForm.columnName || !newColumnForm.dataType)
+      return;
+    try {
+      const res = await fetch(
+        `/api/admin/table-definitions/${expandedId}/columns`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newColumnForm),
+        }
+      );
+      if (res.ok) {
+        setAddingColumn(false);
+        setNewColumnForm({
+          columnName: "",
+          columnNameJa: "",
+          dataType: "",
+          keyType: "",
+          nullable: true,
+          defaultValue: "",
+          constants: "",
+          description: "",
+        });
+        fetchTableDetail(expandedId);
+      }
     } catch {
       // ignore
     }
@@ -135,210 +295,573 @@ export default function AdminSchemaPage() {
     <div className="min-h-screen bg-gray-50">
       <Navigation />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* ヘッダー */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            DB定義書（スキーマ）管理
-          </h1>
-          <button
-            onClick={() => {
-              setEditingId(null);
-              setForm(EMPTY_FORM);
-              setShowForm(true);
-            }}
-            className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-hover"
-          >
-            新規追加
-          </button>
+          <h1 className="text-2xl font-bold text-gray-900">DB定義書管理</h1>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">
+              {tables.length}テーブル
+            </span>
+            <label className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-hover cursor-pointer">
+              {uploading ? "取り込み中..." : ".xlsxアップロード"}
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleUpload}
+                disabled={uploading}
+              />
+            </label>
+          </div>
         </div>
 
-        {/* フィルタ */}
-        <div className="mb-4">
-          <select
-            value={filterDbType}
-            onChange={(e) => setFilterDbType(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        {/* アップロード結果 */}
+        {uploadResult && (
+          <div
+            className={`mb-4 p-3 rounded-lg text-sm ${
+              uploadResult.startsWith("エラー")
+                ? "bg-red-50 text-red-600"
+                : "bg-green-50 text-green-600"
+            }`}
           >
-            <option value="">全DB種別</option>
-            <option value="mysql">MySQL</option>
-            <option value="bigquery">BigQuery</option>
-            <option value="postgres">PostgreSQL</option>
-          </select>
-        </div>
-
-        {/* 一覧 */}
-        <div className="space-y-4">
-          {schemas.map((schema) => (
-            <div
-              key={schema.id}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+            {uploadResult}
+            <button
+              onClick={() => setUploadResult(null)}
+              className="ml-2 text-xs underline"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      {schema.dbType} - v{schema.version}
-                    </h3>
-                    <span
-                      className={`px-2 py-0.5 text-xs rounded ${
-                        schema.isActive
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
-                      {schema.isActive ? "アクティブ" : "非アクティブ"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mb-2">
-                    更新: {new Date(schema.updatedAt).toLocaleString("ja-JP")}
-                  </p>
+              閉じる
+            </button>
+          </div>
+        )}
 
-                  {/* コンテンツプレビュー */}
-                  <div
-                    className="cursor-pointer"
-                    onClick={() =>
-                      setExpandedId(
-                        expandedId === schema.id ? null : schema.id
-                      )
-                    }
-                  >
-                    <pre
-                      className={`bg-gray-50 p-3 rounded-lg text-xs overflow-x-auto ${
-                        expandedId === schema.id ? "" : "max-h-24"
-                      }`}
-                    >
-                      {schema.content}
-                    </pre>
-                    <p className="text-xs text-primary mt-1">
-                      {expandedId === schema.id
-                        ? "折りたたむ"
-                        : "クリックで展開"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 ml-4">
-                  {!schema.isActive && (
-                    <button
-                      onClick={() => handleActivate(schema)}
-                      className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
-                    >
-                      有効化
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleEdit(schema)}
-                    className="px-3 py-1 text-xs bg-primary-light text-primary rounded hover:bg-primary/20"
-                  >
-                    編集
-                  </button>
-                  <button
-                    onClick={() => handleDelete(schema.id)}
-                    className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                  >
-                    削除
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* DB種別フィルタ */}
+        <div className="mb-6 flex gap-2">
+          {[
+            { value: "mysql", label: "MySQL" },
+            { value: "bigquery", label: "BigQuery" },
+            { value: "postgres", label: "PostgreSQL" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => {
+                setFilterDbType(opt.value);
+                setExpandedId(null);
+                setExpandedTable(null);
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                filterDbType === opt.value
+                  ? "bg-primary text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {opt.label}
+            </button>
           ))}
-
-          {schemas.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              DB定義書がまだ登録されていません
-            </div>
-          )}
         </div>
 
-        {/* フォームモーダル */}
-        {showForm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-3xl w-full max-h-[80vh] overflow-y-auto p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                {editingId ? "DB定義書編集" : "DB定義書追加"}
-              </h2>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      DB種別 *
-                    </label>
-                    <select
-                      value={form.dbType}
-                      onChange={(e) =>
-                        setForm({ ...form, dbType: e.target.value })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    >
-                      <option value="mysql">MySQL</option>
-                      <option value="bigquery">BigQuery</option>
-                      <option value="postgres">PostgreSQL</option>
-                    </select>
+        {/* テーブルグリッド */}
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">読み込み中...</div>
+        ) : tables.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            テーブル定義がまだありません。.xlsxをアップロードしてください。
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-6">
+            {tables.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => handleToggleExpand(t.id)}
+                className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                  expandedId === t.id
+                    ? "bg-primary/5 border-primary shadow-sm"
+                    : "bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm"
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {t.tableName}
+                    </p>
+                    {t.tableNameJa && (
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">
+                        {t.tableNameJa}
+                      </p>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      バージョン *
-                    </label>
+                  <span className="text-xs text-gray-400 ml-1">
+                    {expandedId === t.id ? "▲" : "▼"}
+                  </span>
+                </div>
+                {t.description && (
+                  <p className="text-xs text-gray-400 mt-2 line-clamp-2">
+                    {t.description}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 展開されたテーブル詳細 */}
+        {expandedId && expandedTable && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            {/* テーブルヘッダー */}
+            <div className="flex items-start justify-between mb-4">
+              {editingTableId === expandedTable.id ? (
+                <div className="flex-1 space-y-2">
+                  <div className="grid grid-cols-3 gap-3">
                     <input
-                      type="text"
-                      value={form.version}
+                      value={editTableForm.tableName}
                       onChange={(e) =>
-                        setForm({ ...form, version: e.target.value })
+                        setEditTableForm({
+                          ...editTableForm,
+                          tableName: e.target.value,
+                        })
                       }
-                      placeholder="例: 1.0.0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      placeholder="テーブル名"
+                      className="px-3 py-1.5 border border-gray-300 rounded text-sm"
+                    />
+                    <input
+                      value={editTableForm.tableNameJa}
+                      onChange={(e) =>
+                        setEditTableForm({
+                          ...editTableForm,
+                          tableNameJa: e.target.value,
+                        })
+                      }
+                      placeholder="論理名"
+                      className="px-3 py-1.5 border border-gray-300 rounded text-sm"
+                    />
+                    <input
+                      value={editTableForm.description}
+                      onChange={(e) =>
+                        setEditTableForm({
+                          ...editTableForm,
+                          description: e.target.value,
+                        })
+                      }
+                      placeholder="概要"
+                      className="px-3 py-1.5 border border-gray-300 rounded text-sm"
                     />
                   </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveTable}
+                      className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      保存
+                    </button>
+                    <button
+                      onClick={() => setEditingTableId(null)}
+                      className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded"
+                    >
+                      キャンセル
+                    </button>
+                  </div>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    DB定義書（スキーマ内容） *
-                  </label>
-                  <textarea
-                    value={form.content}
-                    onChange={(e) =>
-                      setForm({ ...form, content: e.target.value })
-                    }
-                    rows={16}
-                    placeholder="CREATE TABLE文やテーブル定義をここに記述..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.isActive}
-                    onChange={(e) =>
-                      setForm({ ...form, isActive: e.target.checked })
-                    }
-                    className="rounded"
-                  />
-                  <label className="text-sm text-gray-700">
-                    アクティブにする（同じDB種別の他のスキーマは自動的に非アクティブになります）
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingId(null);
-                  }}
-                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
-                >
-                  キャンセル
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={saving || !form.version || !form.content}
-                  className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-hover disabled:opacity-50"
-                >
-                  {saving ? "保存中..." : "保存"}
-                </button>
-              </div>
+              ) : (
+                <>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">
+                      {expandedTable.tableName}
+                      {expandedTable.tableNameJa && (
+                        <span className="ml-2 text-sm font-normal text-gray-500">
+                          ({expandedTable.tableNameJa})
+                        </span>
+                      )}
+                    </h2>
+                    {expandedTable.description && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {expandedTable.description}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-1">
+                      {expandedTable.columns?.length || 0}カラム
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditTable(expandedTable)}
+                      className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                    >
+                      編集
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTable(expandedTable.id)}
+                      className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
+                    >
+                      削除
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* カラムテーブル */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      No
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      物理名
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      論理名
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      データ型
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      キー
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      NULL
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      デフォルト
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      定数
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      説明
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
+                      操作
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expandedTable.columns?.map((col, idx) =>
+                    editingColumnId === col.id ? (
+                      <tr
+                        key={col.id}
+                        className="border-b border-gray-100 bg-blue-50/30"
+                      >
+                        <td className="px-3 py-2 text-xs text-gray-400">
+                          {idx + 1}
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.columnName || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                columnName: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.columnNameJa || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                columnNameJa: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.dataType || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                dataType: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.keyType || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                keyType: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={editColumnForm.nullable ?? true}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                nullable: e.target.checked,
+                              })
+                            }
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.defaultValue || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                defaultValue: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.constants || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                constants: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            value={editColumnForm.description || ""}
+                            onChange={(e) =>
+                              setEditColumnForm({
+                                ...editColumnForm,
+                                description: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </td>
+                        <td className="px-3 py-2 flex gap-1">
+                          <button
+                            onClick={handleSaveColumn}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            保存
+                          </button>
+                          <button
+                            onClick={() => setEditingColumnId(null)}
+                            className="text-xs text-gray-500"
+                          >
+                            取消
+                          </button>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr
+                        key={col.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="px-3 py-2 text-xs text-gray-400">
+                          {idx + 1}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs">
+                          {col.columnName}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-600">
+                          {col.columnNameJa || "-"}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-600">
+                          {col.dataType}
+                        </td>
+                        <td className="px-3 py-2">
+                          {col.keyType && (
+                            <span
+                              className={`px-1.5 py-0.5 text-xs rounded ${
+                                col.keyType === "PK"
+                                  ? "bg-purple-100 text-purple-700"
+                                  : col.keyType === "UK"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : col.keyType.startsWith("FK")
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {col.keyType}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-500">
+                          {col.nullable ? "YES" : "NOT NULL"}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-500">
+                          {col.defaultValue || "-"}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-500">
+                          {col.constants || "-"}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-600">
+                          {col.description || "-"}
+                        </td>
+                        <td className="px-3 py-2 flex gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditColumn(col);
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            編集
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteColumn(col.id);
+                            }}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            削除
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  )}
+
+                  {/* 新規カラム追加行 */}
+                  {addingColumn && (
+                    <tr className="border-b border-gray-100 bg-green-50/30">
+                      <td className="px-3 py-2 text-xs text-gray-400">+</td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.columnName}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              columnName: e.target.value,
+                            })
+                          }
+                          placeholder="物理名 *"
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.columnNameJa}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              columnNameJa: e.target.value,
+                            })
+                          }
+                          placeholder="論理名"
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.dataType}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              dataType: e.target.value,
+                            })
+                          }
+                          placeholder="データ型 *"
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.keyType}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              keyType: e.target.value,
+                            })
+                          }
+                          placeholder="PK/FK/UK"
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-1 py-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={newColumnForm.nullable}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              nullable: e.target.checked,
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.defaultValue}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              defaultValue: e.target.value,
+                            })
+                          }
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.constants}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              constants: e.target.value,
+                            })
+                          }
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-1 py-1">
+                        <input
+                          value={newColumnForm.description}
+                          onChange={(e) =>
+                            setNewColumnForm({
+                              ...newColumnForm,
+                              description: e.target.value,
+                            })
+                          }
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                        />
+                      </td>
+                      <td className="px-3 py-2 flex gap-1">
+                        <button
+                          onClick={handleAddColumn}
+                          disabled={
+                            !newColumnForm.columnName || !newColumnForm.dataType
+                          }
+                          className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
+                        >
+                          追加
+                        </button>
+                        <button
+                          onClick={() => setAddingColumn(false)}
+                          className="text-xs text-gray-500"
+                        >
+                          取消
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* カラム追加ボタン */}
+            {!addingColumn && (
+              <button
+                onClick={() => setAddingColumn(true)}
+                className="mt-3 px-3 py-1.5 text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded hover:bg-blue-50"
+              >
+                + カラム追加
+              </button>
+            )}
           </div>
         )}
       </main>

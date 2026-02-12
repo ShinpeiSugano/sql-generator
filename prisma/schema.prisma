@@ -112,6 +112,43 @@ model SchemaDocument {
   @@index([dbType, isActive])
 }
 
+// ─── Table Definition (構造化DB定義書) ───
+
+model TableDefinition {
+  id          String   @id @default(cuid())
+  dbType      String   // mysql, bigquery, postgres
+  tableName   String   // 物理名: admins
+  tableNameJa String?  // 論理名: 管理者
+  description String?  // テーブル概要
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  columns ColumnDefinition[]
+
+  @@unique([dbType, tableName])
+  @@index([dbType, isActive])
+}
+
+model ColumnDefinition {
+  id           String  @id @default(cuid())
+  tableId      String
+  sortOrder    Int     @default(0)
+  columnName   String  // 物理名
+  columnNameJa String? // 論理名
+  dataType     String  // VARCHAR(191), INT UNSIGNED, etc.
+  keyType      String? // PK, FK(table.column), UK, null
+  nullable     Boolean @default(true)
+  defaultValue String?
+  constants    String? // "1 = Active, 0 = Inactive"
+  description  String?
+
+  table TableDefinition @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId])
+}
+
 // ─── Audit Log (監査ログ - 追記専用) ───
 
 model AuditLog {
