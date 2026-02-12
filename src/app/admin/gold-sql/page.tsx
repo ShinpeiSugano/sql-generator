@@ -284,7 +284,7 @@ export default function AdminGoldSqlPage() {
                       </span>
                     ))}
                   </div>
-                  <pre className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs overflow-x-auto max-h-32">
+                  <pre className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs overflow-y-auto max-h-32 whitespace-pre-wrap break-all">
                     {gs.sql}
                   </pre>
                 </div>
